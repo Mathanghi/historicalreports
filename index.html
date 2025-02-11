@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title> Historical Reports</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head><style>
+    /* Fire-Themed Dark Mode */
+body {
+    font-family: Arial, sans-serif;
+    background-color: #121212;
+    color: #fff;
+    margin: 0;
+    padding: 0;
+}
+
+header {
+    background: linear-gradient(90deg, #ff4500, #8b0000);
+    padding: 15px;
+    text-align: center;
+    font-size: 24px;
+    font-weight: bold;
+}
+
+.filters {
+    display: flex;
+    justify-content: center;
+    gap: 10px;
+    padding: 15px;
+}
+
+.filters input, .filters button {
+    padding: 12px;
+    border: none;
+    border-radius: 8px;
+    font-size: 16px;
+}
+
+.filters input {
+    background: #2a2a2a;
+    color: white;
+}
+
+.filters button {
+    background-color: #ff4500;
+    color: white;
+    cursor: pointer;
+    transition: 0.3s;
+}
+
+.filters button:hover {
+    background-color: #ff5722;
+}
+
+.map-container, .chart-container, .report-table {
+    text-align: center;
+    padding: 20px;
+}
+
+#map {
+    width: 80%;
+    height: 400px;
+    margin: auto;
+    border: 3px solid #ff4500;
+    border-radius: 8px;
+}
+
+canvas {
+    max-width: 80%;
+    margin: auto;
+    display: block;
+}
+
+table {
+    width: 80%;
+    margin: auto;
+    border-collapse: collapse;
+    text-align: left;
+    box-shadow: 0 0 10px rgba(255, 69, 0, 0.5);
+}
+
+th, td {
+    padding: 12px;
+    border: 1px solid #ff4500;
+}
+
+th {
+    background-color: #ff5722;
+}
+
+/* Popup Alert */
+#alertBox {
+    display: none;
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    background: rgba(255, 69, 0, 0.9);
+    color: white;
+    padding: 15px;
+    border-radius: 8px;
+    font-size: 16px;
+    box-shadow: 0 0 10px rgba(255, 69, 0, 0.8);
+    animation: fadeIn 0.5s ease-in-out;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateX(10px); }
+    to { opacity: 1; transform: translateX(0); }
+}
+
+</style>
+<body>
+    <header>
+        <h1>Reports</h1>
+        <div class="filters">
+            <input type="date" id="dateFilter" placeholder="Filter by Date">
+            <input type="text" id="locationFilter" placeholder="Search Location">
+            <button onclick="applyFilters()">Apply Filters</button>
+        </div>
+    </header>
+    <main>
+        <section class="map-container">
+            <h2>Wildfire Locations</h2>
+            <div id="map"></div>
+        </section>
+        <section class="chart-container">
+            <h2>Wildfire Trend</h2>
+            <canvas id="fireChart"></canvas>
+        </section>
+        <section class="report-table">
+            <h2>Wildfire Incidents</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Date</th>
+                        <th>Location</th>
+                        <th>Area Affected (km²)</th>
+                        <th>Spread Speed (km/h)</th>
+                    </tr>
+                </thead>
+                <tbody id="reportData"></tbody>
+            </table>
+        </section>
+        <div id="popup" class="popup">
+            <p id="popupText"></p>
+            <button onclick="closePopup()">OK</button>
+        </div>
+    </main>
+    <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+    <script>
+        // Dummy data for wildfire incidents
+const wildfireData = [
+{ date: "2025-01-07", location: "California, USA", area: 120, speed: 5.2, coords: [37.7749, -122.4194] },
+{ date: "2025-01-15", location: "Sydney, Australia", area: 200, speed: 7.5, coords: [-33.8688, 151.2093] },
+{ date: "2024-12-10", location: "Amazon Rainforest", area: 300, speed: 6.8, coords: [-3.4653, -62.2159] }
+];
+
+// Initialize map
+var map = L.map('map').setView([20, 0], 2);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+let markersLayer = L.layerGroup().addTo(map); // Layer to manage markers dynamically
+
+// Function to display wildfire data in table
+function loadReportData(filteredData = wildfireData) {
+const tableBody = document.getElementById("reportData");
+tableBody.innerHTML = "";
+
+filteredData.forEach(fire => {
+    let row = `<tr>
+        <td>${fire.date}</td>
+        <td>${fire.location}</td>
+        <td>${fire.area} km²</td>
+        <td>${fire.speed} km/h</td>
+    </tr>`;
+    tableBody.innerHTML += row;
+});
+}
+
+// Function to filter data & update map
+function applyFilters() {
+let dateFilter = document.getElementById("dateFilter").value;
+let locationFilter = document.getElementById("locationFilter").value.toLowerCase().trim();
+
+const filteredData = wildfireData.filter(fire => 
+    (dateFilter ? fire.date === dateFilter : true) &&
+    (locationFilter ? fire.location.toLowerCase().includes(locationFilter) : true)
+);
+
+// Update the table
+loadReportData(filteredData);
+
+// Clear previous map markers
+markersLayer.clearLayers();
+
+if (filteredData.length === 0) {
+    alert("🚨 No wildfire occurred on this date & location.");
+} else {
+    // Add new markers for filtered wildfires
+    filteredData.forEach(fire => {
+        L.marker(fire.coords)
+            .addTo(markersLayer)
+            .bindPopup(`<b>${fire.location}</b><br>Affected: ${fire.area} km²<br>Speed: ${fire.speed} km/h`)
+            .openPopup();
+    });
+
+    // Focus the map on the first matching wildfire
+    map.setView(filteredData[0].coords, 5);
+}
+}
+
+// Load wildfire trends chart
+function loadChart() {
+let ctx = document.getElementById('fireChart').getContext('2d');
+let fireDates = wildfireData.map(f => f.date);
+let fireAreas = wildfireData.map(f => f.area);
+
+new Chart(ctx, {
+    type: 'line',
+    data: {
+        labels: fireDates,
+        datasets: [{
+            label: 'Wildfire Area (km²)',
+            data: fireAreas,
+            borderColor: '#ff4500',
+            backgroundColor: 'rgba(255, 69, 0, 0.2)',
+            borderWidth: 2
+        }]
+    },
+    options: {
+        responsive: true
+    }
+});
+}
+
+// Initialize page
+window.onload = function () {
+loadReportData();
+loadChart();
+};
+
+    </script>
+</body>
+</html>
